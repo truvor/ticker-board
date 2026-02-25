@@ -1,6 +1,7 @@
 import { Component, OnDestroy } from "@angular/core";
 import { AgGridAngular } from "ag-grid-angular";
 import type { ColDef, GridApi, GridReadyEvent } from "ag-grid-community";
+import tickers from "./model.json"
 
 import {
   AllCommunityModule, ModuleRegistry,
@@ -33,7 +34,7 @@ type RowData = {
 })
 export class TickerBoard implements OnDestroy {
   private gridApi!: GridApi;
-  private data$: WebSocketSubject<RowData>;
+  private data$?: WebSocketSubject<RowData>;
 
   onGridReady(params: GridReadyEvent) {
     this.gridApi = params.api;
@@ -42,44 +43,73 @@ export class TickerBoard implements OnDestroy {
 
   rowData: Array<RowData>;
   colDefs: ColDef[] = [
-    { field: "name" },
+    {
+      field: "name",
+      headerName: "Name",
+      cellEditor: "agSelectCellEditor",
+      cellEditorParams: {
+        values: tickers,
+        valueListMaxHeight: 120,
+        valueListMaxWidth: 120
+      },
+      editable: true,
+      onCellValueChanged: (params) => {
+        const index = Number(params!.node!.rowIndex);
+        // Rerun the subscription with updated tickers
+        if (params.newValue !== params.oldValue) {
+          this.rowData[index].name = params.newValue!;
+          this.rowData[index].price = '';
+          this.rowData = [...this.rowData];
+
+          this.gridApi.applyTransaction({
+            update: [
+              this.rowData[index]
+            ]
+          });
+          this.updateRow();
+        }
+      }
+    },
     { field: "price" }
   ];
 
   constructor(private tickerService: TickerService) {
-    this.data$ = this.tickerService.connect(["BTC-USD", "LTC-USD", "ETH-USD"])
+    this.rowData = tickers.map((item: string) => {
+      return {
+        name: item,
+        price: '',
+      }
+    });
+    this.updateRow();
+  }
 
+  updateRow() {
+    if (this.data$) {
+      this.tickerService.disconnect();
+    }
+    this.data$ = this.tickerService.connect(this.rowData.map((item: RowData) => item.name));
     this.data$.pipe(auditTime(250)).
       subscribe((data: { product_id?: string, price: string }) => {
         if (data) {
-          const index = this.rowData.findIndex((item: RowData) => item.name === data.product_id);
-          this.gridApi.applyTransaction({
-            update: [
-              {
-                ...this.rowData[index],
-                price: data.price
-              }
-            ]
-          });
+          const indexes = this.rowData.reduce((acc: number[], item: RowData, index: number) => {
+            if (item.name === data.product_id) {
+              acc.push(index);
+            }
+            return acc;
+          }, []);
 
-          this.rowData[index].price = data?.price
-          this.rowData[index] = {
-            ...this.rowData[index],
-            price: data.price
-          };
+
+          for (let index of indexes) {
+            this.rowData[index].price = data.price || this.rowData[index].price;
+            this.rowData[index].name = data.product_id!;
+            this.gridApi.applyTransaction({
+              update: [
+                this.rowData[index]
+              ]
+            });
+          }
         }
       });
-
-    this.rowData = [{
-      name: "BTC-USD",
-      price: ''
-    }, {
-      name: "LTC-USD",
-      price: ''
-    }, {
-      name: "ETH-USD",
-      price: ''
-    }];
   }
 
   ngOnDestroy(): void {
