@@ -1,7 +1,7 @@
 import { Component, OnDestroy } from "@angular/core";
 import { AgGridAngular } from "ag-grid-angular";
 import type { ColDef, GridApi, GridReadyEvent } from "ag-grid-community";
-import tickers from "./model.json"
+import tickers from "./model.json" with { type: "json" };
 
 import {
   AllCommunityModule, ModuleRegistry,
