@@ -22,6 +22,7 @@ ModuleRegistry.registerModules([AllCommunityModule,
 ]);
 
 type RowData = {
+  id: string;
   name: string;
   price: string;
 }
@@ -39,7 +40,7 @@ export class TickerBoard implements OnDestroy {
   onGridReady(params: GridReadyEvent) {
     this.gridApi = params.api;
   }
-  getRowId = (params: { data: RowData }) => params.data.name;
+  getRowId = (params: { data: RowData }) => params.data.id;
 
   rowData: Array<RowData>;
   colDefs: ColDef[] = [
@@ -54,19 +55,20 @@ export class TickerBoard implements OnDestroy {
       },
       editable: true,
       onCellValueChanged: (params) => {
-        const index = Number(params!.node!.rowIndex);
         // Rerun the subscription with updated tickers
         if (params.newValue !== params.oldValue) {
-          this.rowData[index].name = params.newValue!;
-          this.rowData[index].price = '';
-          this.rowData = [...this.rowData];
+          const index = this.rowData.findIndex((row) => row.id === params.data.id);
+          if (index !== -1) {
+            this.rowData[index].name = params.newValue!;
+            this.rowData[index].price = '';
 
-          this.gridApi.applyTransaction({
-            update: [
-              this.rowData[index]
-            ]
-          });
-          this.updateRow();
+            this.gridApi.applyTransaction({
+              update: [
+                this.rowData[index]
+              ]
+            });
+            this.updateRow();
+          }
         }
       }
     },
@@ -76,6 +78,7 @@ export class TickerBoard implements OnDestroy {
   constructor(private tickerService: TickerService) {
     this.rowData = tickers.map((item: string) => {
       return {
+        id: crypto.randomUUID(),
         name: item,
         price: '',
       }
@@ -91,7 +94,7 @@ export class TickerBoard implements OnDestroy {
     this.data$.pipe(auditTime(250)).
       subscribe((data: { product_id?: string, price: string }) => {
         if (data) {
-          const indexes = this.rowData.reduce((acc: number[], item: RowData, index: number) => {
+          const indices = this.rowData.reduce((acc: number[], item: RowData, index: number) => {
             if (item.name === data.product_id) {
               acc.push(index);
             }
@@ -99,7 +102,7 @@ export class TickerBoard implements OnDestroy {
           }, []);
 
 
-          for (let index of indexes) {
+          for (let index of indices) {
             this.rowData[index].price = data.price || this.rowData[index].price;
             this.rowData[index].name = data.product_id!;
             this.gridApi.applyTransaction({
