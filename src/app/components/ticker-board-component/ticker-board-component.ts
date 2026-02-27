@@ -10,7 +10,7 @@ import {
   ClientSideRowModelApiModule,
   ClientSideRowModelModule,
 } from "ag-grid-community";
-import { auditTime } from "rxjs";
+import { filter, groupBy, mergeMap, throttleTime } from 'rxjs/operators';
 import { WebSocketSubject } from 'rxjs/webSocket';
 import { TickerService } from "../../services/TickerService/ticker-service";
 
@@ -91,28 +91,31 @@ export class TickerBoard implements OnDestroy {
       this.tickerService.disconnect();
     }
     this.data$ = this.tickerService.connect(this.rowData.map((item: RowData) => item.name));
-    this.data$.pipe(auditTime(250)).
-      subscribe((data: { product_id?: string, price: string }) => {
-        if (data) {
-          const indices = this.rowData.reduce((acc: number[], item: RowData, index: number) => {
-            if (item.name === data.product_id) {
-              acc.push(index);
-            }
-            return acc;
-          }, []);
-
-
-          for (let index of indices) {
-            this.rowData[index].price = data.price || this.rowData[index].price;
-            this.rowData[index].name = data.product_id!;
-            this.gridApi.applyTransaction({
-              update: [
-                this.rowData[index]
-              ]
-            });
+    this.data$.pipe(
+      filter((data: any) => data.type === 'ticker'),
+      groupBy((data: { product_id?: string, price: string }) => data.product_id),
+      mergeMap(group$ => group$.pipe(throttleTime(250)))
+    ).subscribe((data: { product_id?: string, price: string }) => {
+      if (data) {
+        const indices = this.rowData.reduce((acc: number[], item: RowData, index: number) => {
+          if (item.name === data.product_id) {
+            acc.push(index);
           }
+          return acc;
+        }, []);
+
+
+        for (let index of indices) {
+          this.rowData[index].price = data.price || this.rowData[index].price;
+          this.rowData[index].name = data.product_id!;
+          this.gridApi.applyTransaction({
+            update: [
+              this.rowData[index]
+            ]
+          });
         }
-      });
+      }
+    });
   }
 
   ngOnDestroy(): void {
